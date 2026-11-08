@@ -18,7 +18,7 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('Origin is not allowed by CORS'));
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
