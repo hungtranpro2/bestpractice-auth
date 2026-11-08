@@ -5,7 +5,7 @@ import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.module.js';
 import type { AuthenticatedRequest } from './auth.types.js';
 
-const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const TOUCH_INTERVAL_MS = 60_000;
 
 @Injectable()
@@ -32,21 +32,19 @@ export class SessionService {
     if (this.cookieName.startsWith('__Secure-') && !this.secure) {
       throw new Error('__Secure- cookie requires Secure');
     }
-    if (this.sameSite === 'none' && !this.secure) {
-      throw new Error('SameSite=None requires Secure');
-    }
+    if (this.sameSite === 'none' && !this.secure) throw new Error('SameSite=None requires Secure');
     if (config.get<string>('NODE_ENV') === 'production' && !this.secure) {
       throw new Error('SESSION_COOKIE_SECURE must be true in production');
     }
   }
 
-  private hash(token: string): string {
+  private hash(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
 
   private readToken(req?: AuthenticatedRequest): string | undefined {
-    const token = req?.cookies?.[this.cookieName];
-    return typeof token === 'string' && SESSION_TOKEN_PATTERN.test(token) ? token : undefined;
+    const token: unknown = req?.cookies?.[this.cookieName];
+    return typeof token === 'string' && TOKEN_PATTERN.test(token) ? token : undefined;
   }
 
   private cookieOptions() {
@@ -54,21 +52,19 @@ export class SessionService {
       httpOnly: true,
       secure: this.secure,
       sameSite: this.sameSite,
-      path: '/',
+      path: '/' as const,
       ...(this.domain ? { domain: this.domain } : {}),
     };
   }
 
-  /**
-   * Revoke the browser's previous credential before issuing a new one.
-   * The previous cookie is untrusted input; only its hash is used in SQL.
-   */
+  clearCookie(res: Response): void {
+    res.clearCookie(this.cookieName, this.cookieOptions());
+  }
+
   async create(userId: string, req: AuthenticatedRequest | undefined, res: Response): Promise<void> {
     const previousToken = this.readToken(req);
     if (previousToken) {
-      await this.prisma.session.deleteMany({
-        where: { tokenHash: this.hash(previousToken) },
-      });
+      await this.prisma.session.deleteMany({ where: { tokenHash: this.hash(previousToken) } });
     }
 
     const token = randomBytes(32).toString('base64url');
@@ -81,27 +77,19 @@ export class SessionService {
         lastSeenAt: now,
       },
     });
-
-    res.cookie(this.cookieName, token, {
-      ...this.cookieOptions(),
-      maxAge: this.ttlMs,
-    });
+    res.cookie(this.cookieName, token, { ...this.cookieOptions(), maxAge: this.ttlMs });
   }
 
   async resolve(req: AuthenticatedRequest) {
     const token = this.readToken(req);
     if (!token) return null;
-
     const now = new Date();
     const session = await this.prisma.session.findUnique({
       where: { tokenHash: this.hash(token) },
       include: {
-        user: {
-          select: { id: true, email: true, displayName: true, isActive: true },
-        },
+        user: { select: { id: true, email: true, displayName: true, isActive: true } },
       },
     });
-
     if (!session) return null;
 
     const idleExpired =
@@ -112,6 +100,7 @@ export class SessionService {
       idleExpired ||
       !session.user.isActive
     ) {
+      // Only delete the current database row; never permit a stale "touch" to revive it.
       await this.prisma.session.deleteMany({ where: { id: session.id } });
       return null;
     }
@@ -135,7 +124,6 @@ export class SessionService {
     };
   }
 
-  /** Return only safe session metadata; never expose token hashes. */
   async list(userId: string) {
     const now = new Date();
     return this.prisma.session.findMany({
@@ -147,18 +135,13 @@ export class SessionService {
           ? { lastSeenAt: { gt: new Date(now.getTime() - this.idleMs) } }
           : {}),
       },
-      select: {
-        id: true,
-        createdAt: true,
-        lastSeenAt: true,
-        expiresAt: true,
-      },
+      select: { id: true, createdAt: true, lastSeenAt: true, expiresAt: true },
       orderBy: { lastSeenAt: 'desc' },
     });
   }
 
   async revokeById(userId: string, sessionId: string): Promise<void> {
-    // Ownership is part of the delete predicate; never trust a client-supplied session id.
+    // Ownership is enforced in SQL, not by a preceding unprotected read.
     await this.prisma.session.deleteMany({ where: { id: sessionId, userId } });
   }
 
@@ -168,12 +151,10 @@ export class SessionService {
     } else {
       const token = this.readToken(req);
       if (token) {
-        await this.prisma.session.deleteMany({
-          where: { tokenHash: this.hash(token) },
-        });
+        await this.prisma.session.deleteMany({ where: { tokenHash: this.hash(token) } });
       }
     }
-    res.clearCookie(this.cookieName, this.cookieOptions());
+    this.clearCookie(res);
   }
 
   async revokeAll(userId: string): Promise<void> {

@@ -1,24 +1,43 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+
+const MAX_AGE_SECONDS = 10 * 60;
+
 @Injectable()
 export class CsrfService {
   private readonly secret: string;
-  constructor(config: ConfigService) { this.secret = config.getOrThrow('CSRF_SECRET'); }
-  issue(): string {
-    const nonce = randomBytes(32).toString('base64url');
-    const mac = createHmac('sha256', this.secret).update(nonce).digest('base64url');
-    return nonce + '.' + mac;
+  constructor(config: ConfigService) {
+    this.secret = config.getOrThrow<string>('CSRF_SECRET');
   }
-  verify(token?: string): void {
-    if (!token) throw new ForbiddenException('CSRF token missing or invalid');
-    const [nonce, supplied, extra] = token.split('.');
-    if (!nonce || !supplied || extra !== undefined) throw new ForbiddenException('CSRF token missing or invalid');
-    const expected = createHmac('sha256', this.secret).update(nonce).digest();
-    let actual: Buffer;
-    try { actual = Buffer.from(supplied, 'base64url'); } catch { throw new ForbiddenException('CSRF token missing or invalid'); }
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-      throw new ForbiddenException('CSRF token missing or invalid');
-    }
+
+  private binding(sessionToken?: unknown): string {
+    const raw = typeof sessionToken === 'string' ? sessionToken : 'anonymous';
+    return createHash('sha256').update(raw).digest('hex');
+  }
+
+  issue(sessionToken?: unknown): string {
+    const nonce = randomBytes(24).toString('base64url');
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const message = [nonce, timestamp, this.binding(sessionToken)].join('.');
+    const mac = createHmac('sha256', this.secret).update(message).digest('base64url');
+    return [nonce, timestamp, mac].join('.');
+  }
+
+  verify(token?: string, sessionToken?: unknown): void {
+    const invalid = () => new ForbiddenException('CSRF token missing or invalid');
+    if (!token || token.length > 256) throw invalid();
+    const parts = token.split('.');
+    if (parts.length !== 3) throw invalid();
+    const [nonce, timestamp, supplied] = parts;
+    if (!/^[A-Za-z0-9_-]{32}$/.test(nonce) || !/^\d{10}$/.test(timestamp) ||
+        !/^[A-Za-z0-9_-]{43}$/.test(supplied)) throw invalid();
+    const ts = Number(timestamp);
+    const age = Math.floor(Date.now() / 1000) - ts;
+    if (!Number.isSafeInteger(ts) || age < 0 || age > MAX_AGE_SECONDS) throw invalid();
+    const message = [nonce, timestamp, this.binding(sessionToken)].join('.');
+    const expected = createHmac('sha256', this.secret).update(message).digest();
+    const actual = Buffer.from(supplied, 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw invalid();
   }
 }
