@@ -37,6 +37,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Upgrade npm for peer dependency resolution
+        run: npm install -g npm@11.19.1
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Archive generated npm lockfile
