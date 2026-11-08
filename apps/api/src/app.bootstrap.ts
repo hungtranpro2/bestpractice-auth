@@ -16,7 +16,7 @@ export function configureApp(app: INestApplication): void {
   });
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) => {
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
       return callback(null, false);
     },
