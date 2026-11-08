@@ -59,6 +59,12 @@ jobs:
         run: npm install -g npm@11.19.1
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Archive generated npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-package-lock
+          path: apps/api/package-lock.json
+          if-no-files-found: error
       - name: Generate Prisma Client
         run: npm run prisma:generate
       - name: Check migrations
