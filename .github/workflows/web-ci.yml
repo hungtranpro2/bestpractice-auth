@@ -1,0 +1,53 @@
+name: Web CI
+
+on:
+  push:
+    branches: [feat/nextjs-app-router-auth]
+    paths:
+      - "apps/web/**"
+      - "docs/nextjs-integration.md"
+      - "docs/decisions/0003-nextjs-app-router-integration.md"
+      - "deploy/nginx/**"
+      - ".github/workflows/web-ci.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "docs/nextjs-integration.md"
+      - "docs/decisions/0003-nextjs-app-router-integration.md"
+      - "deploy/nginx/**"
+      - ".github/workflows/web-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Next.js typecheck / tests / production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      NEXT_PUBLIC_API_BASE_URL: /v1
+      API_INTERNAL_URL: http://localhost:4000/v1
+      SESSION_COOKIE_NAME: __Host-session
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Archive generated npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-package-lock
+          path: apps/web/package-lock.json
+          if-no-files-found: error
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
