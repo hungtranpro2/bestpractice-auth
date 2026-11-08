@@ -127,6 +127,23 @@ describe('Authentication E2E (PostgreSQL)', () => {
     await agent().get('/v1/auth/me').set('Cookie', cookie).expect(401);
   });
 
+  it('logout-all revokes every session created for the user', async () => {
+    const { cookie: firstCookie, email, userId } = await register();
+    const anonymousCsrf = await csrf();
+    const login = await agent().post('/v1/auth/login')
+      .set('Origin', ORIGIN).set('X-CSRF-Token', anonymousCsrf)
+      .send({ email, password: PASSWORD }).expect(200);
+    const secondCookie = sessionCookie(login);
+    expect(await db.session.count({ where: { userId } })).toBe(2);
+    const token = await csrf(firstCookie);
+    await agent().post('/v1/auth/logout-all')
+      .set('Origin', ORIGIN).set('Cookie', firstCookie).set('X-CSRF-Token', token)
+      .expect(200);
+    expect(await db.session.count({ where: { userId } })).toBe(0);
+    await agent().get('/v1/auth/me').set('Cookie', firstCookie).expect(401);
+    await agent().get('/v1/auth/me').set('Cookie', secondCookie).expect(401);
+  });
+
   it('returns generic invalid credentials for existing and missing accounts', async () => {
     const { email } = await register();
     const token = await csrf();
