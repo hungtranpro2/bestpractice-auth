@@ -1,0 +1,71 @@
+name: API CI
+
+on:
+  push:
+    branches: [main, feat/nestjs-auth-core]
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/api-ci.yml"
+      - "docker-compose.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/api-ci.yml"
+      - "docker-compose.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: Prisma / TypeScript / Unit / E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: bestpractice_auth
+          POSTGRES_USER: auth
+          POSTGRES_PASSWORD: auth_dev_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auth -d bestpractice_auth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://auth:auth_dev_only@localhost:5432/bestpractice_auth?schema=public
+      WEB_ORIGINS: http://localhost:3000
+      SESSION_COOKIE_NAME: __Host-session
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_DOMAIN: ""
+      SESSION_COOKIE_SAME_SITE: lax
+      SESSION_TTL_DAYS: "7"
+      SESSION_IDLE_TTL_MINUTES: "1440"
+      CSRF_SECRET: ci-only-very-long-random-looking-csrf-secret-do-not-use-in-production
+      TRUST_PROXY_HOPS: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+      - name: Check migrations
+        run: npm run db:migrate:deploy
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npm test
+      - name: PostgreSQL E2E tests
+        run: npm run test:e2e
