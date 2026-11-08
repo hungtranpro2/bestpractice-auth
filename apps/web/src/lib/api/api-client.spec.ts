@@ -16,7 +16,7 @@ describe('browser API client', () => {
     const { apiRequest } = await import('./api-client');
     await expect(apiRequest('/auth/me')).resolves.toEqual({ user: { id: 'u1' } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:4000/v1/auth/me');
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/auth/me');
     expect(fetchMock.mock.calls[0][1]).toMatchObject({
       credentials: 'include',
       cache: 'no-store',
@@ -32,7 +32,7 @@ describe('browser API client', () => {
     const { apiRequest } = await import('./api-client');
     await expect(apiRequest('/auth/logout', { method: 'POST' })).resolves.toEqual({ success: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:4000/v1/auth/csrf');
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/auth/csrf');
     const requestInit = fetchMock.mock.calls[1][1] as RequestInit;
     expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('signed-csrf-token');
     expect(requestInit.credentials).toBe('include');
@@ -70,7 +70,7 @@ describe('browser API client', () => {
     await logout();
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get('X-CSRF-Token')).toBe('pre-auth-token');
-    expect(fetchMock.mock.calls[2][0]).toBe('http://localhost:4000/v1/auth/csrf');
+    expect(fetchMock.mock.calls[2][0]).toBe('/v1/auth/csrf');
     expect(new Headers(fetchMock.mock.calls[3][1]?.headers).get('X-CSRF-Token')).toBe('post-auth-token');
   });
 
@@ -89,7 +89,9 @@ describe('browser API client', () => {
   });
 
   it('returns undefined for 204 responses', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ csrfToken: 'delete-token' }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const { apiRequest } = await import('./api-client');
     await expect(apiRequest('/auth/sessions/id', { method: 'DELETE' })).resolves.toBeUndefined();
   });
