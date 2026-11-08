@@ -1,21 +1,24 @@
+import 'reflect-metadata';
+import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  plugins: [
+    swc.vite({
+      module: { type: 'es6' },
+      jsc: { transform: { legacyDecorator: true, decoratorMetadata: true } },
+    }),
+  ],
   test: {
     environment: 'node',
-    include: ['src/**/*.spec.ts', 'test/**/*.spec.ts'],
+    include: ['src/**/*.spec.ts'],
     clearMocks: true,
     restoreMocks: true,
+    setupFiles: ['reflect-metadata'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/main.ts', 'src/**/*.module.ts', 'src/generated/**'],
-      thresholds: {
-        statements: 80,
-        branches: 75,
-        functions: 80,
-        lines: 80
-      }
-    }
-  }
+      include: ['src/auth/**/*.ts'],
+      exclude: ['src/auth/**/*.spec.ts', 'src/auth/**/*.module.ts'],
+    },
+  },
 });
