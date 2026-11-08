@@ -76,6 +76,7 @@ export class AuthController {
     if (req.sessionId === id) this.sessions.clearCookie(res);
   }
 
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   logout(
